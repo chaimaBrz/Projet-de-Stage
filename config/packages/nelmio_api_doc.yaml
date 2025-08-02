@@ -1,0 +1,80 @@
+nelmio_api_doc:
+    models: { use_jms: false }
+    documentation:
+        info:
+            title: Backend
+            description: This is an awesome app!
+            version: 1.0.0
+        components:
+            securitySchemes:
+                Bearer:
+                    type: http
+                    scheme: bearer
+                    bearerFormat: JWT
+        security:
+            - Bearer: []
+            - ^/api(?!/doc/$) # Accepts routes under /api except /api/doc
+        paths:
+            /api/login_check:
+                post:
+                    tags:
+                        - Authentication
+                    summary: Login
+                    requestBody:
+                        content:
+                            application/json:
+                                schema:
+                                    properties:
+                                        email:
+                                            type: string
+                                        password:
+                                            type: string
+                                    type: object
+                    responses:
+                        '200':
+                            description: OK
+                            content:
+                                application/json:
+                                    schema:
+                                        type: object
+                                        properties:
+                                            token:
+                                                type: string
+                                            refresh_token:
+                                                type: string
+                        '401':
+                            description: Invalid credentials
+                        '400':
+                            description: Invalid JSON.
+                    security: []
+            /api/token/refresh:
+                post:
+                    tags:
+                        - Authentication
+                    summary: Refresh token
+                    requestBody:
+                        content:
+                            application/json:
+                                schema:
+                                    properties:
+                                        refresh_token:
+                                            type: string
+                                    type: object
+                    responses:
+                        '200':
+                            description: OK
+                            content:
+                                application/json:
+                                    schema:
+                                        type: object
+                                        properties:
+                                            token:
+                                                type: string
+                                            refresh_token:
+                                                type: string
+                        '401':
+                            description: An authentication exception occurred.
+                    security: []
+    areas: # to filter documented areas
+        path_patterns:
+            - ^/api(?!/doc$) # Accepts routes under /api except /api/doc
