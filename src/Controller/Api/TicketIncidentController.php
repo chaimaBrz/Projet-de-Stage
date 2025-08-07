@@ -1,9 +1,13 @@
 <?php
 
 namespace App\Controller\Api;
-use App\Entity\EvenenemntHistorique;
+use App\Entity\EvenementHistorique;
+
 use App\Entity\TicketIncident;
 use App\Entity\User;
+use App\Entity\Equipement; // ✅
+use App\Entity\Type;
+
 use App\Repository\TicketIncidentRepository;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -47,47 +51,70 @@ class TicketIncidentController extends AbstractController
                 new OA\Property(property: 'description', type: 'string'),
                 new OA\Property(property: 'userCreateurId', type: 'integer'),
                 new OA\Property(property: 'userAssigneId', type: 'integer'),
-                new OA\Property(property: 'statut', type: 'string')
+                new OA\Property(property: 'statut', type: 'string'),
+                new OA\Property(property: 'equipementId', type: 'integer'),
+
             ]
         )
     )]
     #[OA\Response(response: 201, description: 'Ticket créé')]
-    public function create(Request $request, EntityManagerInterface $em): JsonResponse
-    {
-        $data = json_decode($request->getContent(), true);
-        
-        $ticket = new TicketIncident();
-        $ticket->setTitre($data['titre'] ?? '');
-        $ticket->setDescription($data['description'] ?? '');
-        $ticket->setStatut($data['statut'] ?? 'ouvert');
-        $ticket->setDateCreation(new \DateTime());
+   public function create(Request $request, EntityManagerInterface $em): JsonResponse
+{
+    $data = json_decode($request->getContent(), true);
 
-        $createur = $em->getRepository(User::class)->find($data['userCreateurId'] ?? 0);
-        if (!$createur) {
-            return new JsonResponse(['error' => 'User createur non trouvé'], 400);
-        }
-        $ticket->setUserCreateur($createur);
-
-        if (!empty($data['userAssigneId'])) {
-            $assigne = $em->getRepository(User::class)->find($data['userAssigneId']);
-            if ($assigne) {
-                $ticket->setUserAssigne($assigne);
-            }
-        }
-
-        $evenement = new EvenementHistorique();
-        $evenement->setDescription('Création du ticket : ' . $ticket->getTitre());
-        $evenement->setDate(new \DateTime());
-        $evenement->setType($em->getRepository(Type::class)->find(1)); // adapte l’ID ou fais une logique dynamique
-        $evenement->setTicketIncident($ticket); // relation directe
-
-        $ticket->addEvenementHistorique($evenement); // facultatif mais propre
-
-        $em->persist($ticket); // ça va persister aussi l’événement grâce au cascade
-        $em->flush();
-
-        return new JsonResponse(['message' => 'Ticket créé'], 201);
+    // 1. Récupération des entités liées
+    $equipement = $em->getRepository(Equipement::class)->find($data['equipementId'] ?? 0);
+    if (!$equipement) {
+        return new JsonResponse(['error' => 'Équipement non trouvé'], 400);
     }
+
+    $createur = $em->getRepository(User::class)->find($data['userCreateurId'] ?? 0);
+    if (!$createur) {
+        return new JsonResponse(['error' => 'User créateur non trouvé'], 400);
+    }
+
+    $assigne = null;
+    if (!empty($data['userAssigneId'])) {
+        $assigne = $em->getRepository(User::class)->find($data['userAssigneId']);
+    }
+
+    // 2. Création du ticket
+    $ticket = new TicketIncident();
+    $ticket->setTitre($data['titre'] ?? '');
+    $ticket->setDescription($data['description'] ?? '');
+    $ticket->setStatut($data['statut'] ?? '');
+    $ticket->setUserCreateur($createur);
+    if ($assigne) {
+        $ticket->setUserAssigne($assigne);
+    }
+    $ticket->setEquipement($equipement);
+
+    $em->persist($ticket);
+
+    // 3. Création automatique de l'événement historique lié au ticket
+    $event = new \App\Entity\EvenementHistorique();
+
+    $event->setDate(new \DateTime());
+    $event->setDescription("Création du ticket : " . $ticket->getTitre());
+    $event->setType($em->getRepository(Type::class)->find(1)); // Tu peux adapter ce type
+    $event->setTicketIncident($ticket);
+    $event->setEquipement($equipement);
+
+    $em->persist($event);
+
+    // 4. Enregistrement en base
+    $em->flush();
+
+   return new JsonResponse([
+    'message' => 'Ticket créé avec succès',
+    'ticket' => [
+        'id' => $ticket->getId(),
+        'titre' => $ticket->getTitre(),
+        'description' => $ticket->getDescription()
+    ]
+], 201);
+
+}
 
     #[Route('/{id}', name: 'ticket_incident_update', methods: ['PUT'])]
     #[OA\Put(description: 'Mettre à jour un ticket')]
@@ -160,4 +187,4 @@ class TicketIncidentController extends AbstractController
 
         return new JsonResponse(null, 204);
     }
-}
+} 

@@ -69,4 +69,33 @@ class AlerteController extends AbstractController
 
         return new JsonResponse(['message' => 'Alerte créée avec succès'], 201);
     }
+    #[Route('/equipements', name: 'list', methods: ['GET'])]
+public function list(EntityManagerInterface $em): JsonResponse
+{
+    $equipements = $em->getRepository(Equipement::class)->findAll();
+
+    $data = [];
+
+    foreach ($equipements as $equipement) {
+        $alertesData = [];
+        foreach ($equipement->getAlertes() as $alerte) {
+            $alertesData[] = [
+                'id' => $alerte->getId(),
+                'titre' => $alerte->getTitre(),  // ✅ ICI on utilise getTitre()
+                'niveau' => $alerte->getNiveau(),
+                'message' => $alerte->getMessage(),
+                'date' => $alerte->getDate()->format('Y-m-d H:i:s'),
+            ];
+        }
+
+        $data[] = [
+            'id' => $equipement->getId(),
+            'nom' => $equipement->getNom(),
+            'alertes' => $alertesData,
+        ];
+    }
+
+    return $this->json($data);
+}
+
 }

@@ -4,36 +4,21 @@ namespace App\Controller;
 
 use App\Entity\EvenementHistorique;
 use App\Entity\Type;
+use App\Entity\Equipement;
 use App\Entity\TicketIncident;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Routing\Annotation\Route;
+use Symfony\Component\Serializer\SerializerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use OpenApi\Attributes as OA;
+
 #[OA\Tag(name: 'EvenementHistoriques')]
 #[Route('/api/evenement-historiques', name: 'api_evenement_historiques_')]
 class EvenementHistoriqueController extends AbstractController
 {
-    #[Route('/', name: 'index', methods: ['GET'])]
-    public function index(EntityManagerInterface $em): JsonResponse
-    {
-        $repo = $em->getRepository(EvenementHistorique::class);
-        $evenements = $repo->findAll();
-
-        $data = [];
-        foreach ($evenements as $event) {
-            $data[] = [
-                'id' => $event->getId(),
-                'date' => $event->getDate()?->format('Y-m-d'),
-                'description' => $event->getDescription(),
-                'type_id' => $event->getType()?->getId(),
-                'ticket_incident_id' => $event->getTicketIncident()?->getId(),
-            ];
-        }
-
-        return new JsonResponse($data);
-    }
+    
 
     #[Route('/{id}', name: 'show', methods: ['GET'])]
     public function show(int $id, EntityManagerInterface $em): JsonResponse
@@ -163,4 +148,48 @@ class EvenementHistoriqueController extends AbstractController
 
         return new JsonResponse(['message' => 'Événement supprimé']);
     }
+   
+
+
+#[Route('/', name: 'index', methods: ['GET'])] // ✅ nouvelle annotation correcte
+
+public function index(EntityManagerInterface $em): JsonResponse
+{
+    $equipements = $em->getRepository(Equipement::class)->findAll();
+    $data = [];
+
+    foreach ($equipements as $equipement) {
+        $evenements = [];
+
+        foreach ($equipement->getTicketIncidents() as $ticket) {
+            foreach ($ticket->getEvenementsHistoriques() as $evenement) {
+                $evenements[] = [
+                    'id' => $evenement->getId(),
+                    'date' => $evenement->getDate()->format('Y-m-d'),
+                    'description' => $evenement->getDescription(),
+                    'ticket' => [
+    'id' => $ticket->getId(),
+    'titre' => $ticket->getTitre(),
+    'description' => $ticket->getDescription()
+]
+
+                ];
+            }
+        }
+
+        if (!empty($evenements)) {
+            $data[] = [
+                'equipement' => [
+                    'id' => $equipement->getId(),
+                    'nom' => $equipement->getNom(),
+                ],
+                'evenements' => $evenements
+            ];
+        }
+    }
+
+    return new JsonResponse($data);
+}
+
+
 }

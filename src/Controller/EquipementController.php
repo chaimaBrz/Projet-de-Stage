@@ -13,7 +13,6 @@ use Symfony\Component\Routing\Annotation\Route;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use OpenApi\Attributes as OA;
 
-
 #[OA\Tag(name: 'Equipements')]
 #[Route('/api/equipements', name: 'api_equipements_')]
 class EquipementController extends AbstractController
@@ -26,31 +25,14 @@ class EquipementController extends AbstractController
     ) {}
 
     #[Route('/', name: 'index', methods: ['GET'])]
-    #[OA\Get(
-        summary: "Liste de tous les équipements",
-        responses: [
-            new OA\Response(
-                response: 200,
-                description: "Liste des équipements",
-                content: new OA\JsonContent(
-                    type: "array",
-                    items: new OA\Items(
-                        properties: [
-                            new OA\Property(property: "id", type: "integer"),
-                            new OA\Property(property: "nom", type: "string"),
-                            new OA\Property(property: "etat", type: "integer"),
-                            new OA\Property(property: "date_installation", type: "string", format: "date"),
-                            new OA\Property(property: "type_id", type: "integer"),
-                            new OA\Property(property: "fournisseur_id", type: "integer", nullable: true),
-                        ]
-                    )
-                )
-            )
-        ]
-    )]
     public function index(): JsonResponse
     {
-        $equipements = $this->equipementRepo->findAll();
+        $equipements = $this->equipementRepo->createQueryBuilder('e')
+    ->leftJoin('e.alertes', 'a')
+    ->addSelect('a')
+    ->getQuery()
+    ->getResult();
+
 
         $data = [];
         foreach ($equipements as $e) {
@@ -58,7 +40,7 @@ class EquipementController extends AbstractController
             foreach ($e->getAlertes() as $a) {
                 $alerts[] = [
                     'id' => $a->getId(),
-                    'nom' => $e->getNom(),
+                    'titre' => $a->getTitre(),
                 ];
             }
 
@@ -67,105 +49,117 @@ class EquipementController extends AbstractController
                 'nom' => $e->getNom(),
                 'alerts' => $alerts,
                 'etat' => $e->getEtat(),
-                'date_installation' => $e->getDateinstallation()?->format('Y-m-d'),
+                'date_installation' => $e->getDateInstallation()?->format('Y-m-d'),
                 'type_nom' => $e->getType()?->getNom(),
                 'fournisseur_id' => $e->getFournisseur()?->getId(),
             ];
         }
 
-        return new JsonResponse($data);
+        return $this->json($data);
     }
 
     #[Route('/{id}', name: 'show', methods: ['GET'])]
-    #[OA\Get(
-        summary: "Afficher un équipement par ID",
-        parameters: [
-            new OA\Parameter(
-                name: "id",
-                in: "path",
-                required: true,
-                description: "ID de l'équipement",
-                schema: new OA\Schema(type: "integer")
-            )
-        ],
-        responses: [
-            new OA\Response(
-                response: 200,
-                description: "Détails de l'équipement",
-                content: new OA\JsonContent(
-                    type: "object",
-                    properties: [
-                        new OA\Property(property: "id", type: "integer"),
-                        new OA\Property(property: "nom", type: "string"),
-                        new OA\Property(property: "etat", type: "integer"),
-                        new OA\Property(property: "date_installation", type: "string", format: "date"),
-                        new OA\Property(property: "type_id", type: "integer"),
-                        new OA\Property(property: "fournisseur_id", type: "integer", nullable: true),
-                    ]
-                )
-            ),
-            new OA\Response(response: 404, description: "Équipement non trouvé")
-        ]
-    )]
     public function show(int $id): JsonResponse
     {
         $equipement = $this->equipementRepo->find($id);
 
         if (!$equipement) {
-            return new JsonResponse(['message' => 'Équipement non trouvé'], 404);
+            return $this->json(['message' => 'Équipement non trouvé'], 404);
+        }
+
+        $evenements = [];
+        foreach ($equipement->getEvenements() as $evenement) {
+            $evenements[] = [
+                'id' => $evenement->getId(),
+                'date' => $evenement->getDate()->format('Y-m-d H:i'),
+                'description' => $evenement->getDescription(),
+                'type' => $evenement->getType()?->getNom(),
+                'ticket_description' => $evenement->getTicketIncident()?->getDescription(),
+
+
+            ];
+        }
+
+        $tickets = [];
+        foreach ($equipement->getTicketIncidents() as $ticket) {
+            $evenementsTicket = [];
+            foreach ($ticket->getEvenementsHistoriques() as $evt) {
+                $evenementsTicket[] = [
+                    'id' => $evt->getId(),
+                    'date' => $evt->getDate()->format('Y-m-d H:i'),
+                    'description' => $evt->getDescription(),
+                    'type' => $evt->getType()?->getNom(),
+                ];
+            }
+
+            $tickets[] = [
+                'id' => $ticket->getId(),
+                'titre' => $ticket->getTitre(),
+                'description' => $ticket->getDescription(),
+                'date_creation' => $ticket->getDateCreation()->format('Y-m-d H:i'),
+                'statut' => $ticket->getStatut(),
+                'user_createur' => $ticket->getUserCreateur()?->getId(),
+                'user_assigne' => $ticket->getUserAssigne()?->getId(),
+               
+            ];
         }
 
         $data = [
             'id' => $equipement->getId(),
             'nom' => $equipement->getNom(),
             'etat' => $equipement->getEtat(),
-            'date_installation' => $equipement->getDateinstallation()?->format('Y-m-d'),
+            'date_installation' => $equipement->getDateInstallation()?->format('Y-m-d'),
             'type_nom' => $equipement->getType()?->getNom(),
-            'fournisseur_nom' => $equipement->getFournisseur()?->getNom(),
-
+            'fournisseur_id' => $equipement->getFournisseur()?->getId(),
+            'evenements' => $evenements,
+            'tickets' => $tickets,
         ];
 
-        return new JsonResponse($data);
+        return $this->json($data);
     }
 
-    #[Route('/', name: 'create', methods: ['POST'])]
     #[OA\Post(
-        summary: "Créer un nouvel équipement",
-        requestBody: new OA\RequestBody(
-            required: true,
-            content: new OA\JsonContent(
-                type: "object",
-                required: ["nom", "etat", "date_installation", "type_id"],
-                properties: [
-                    new OA\Property(property: "nom", type: "string", example: "Serveur HP"),
-                    new OA\Property(property: "etat", type: "integer", example: 1),
-                    new OA\Property(property: "date_installation", type: "string", format: "date", example: "2024-07-01"),
-                    new OA\Property(property: "type_id", type: "integer", example: 2),
-                    new OA\Property(property: "fournisseur_id", type: "integer", example: 1, nullable: true),
-                ]
-            )
-        ),
-        responses: [
-            new OA\Response(response: 201, description: "Équipement créé avec succès"),
-            new OA\Response(response: 400, description: "Erreur de validation")
-        ]
-    )]
-    public function create(Request $request): JsonResponse
+    requestBody: new OA\RequestBody(
+        required: true,
+        content: new OA\JsonContent(
+            type: "object",
+            properties: [
+                new OA\Property(property: "nom", type: "string"),
+                new OA\Property(property: "etat", type: "integer"),
+                new OA\Property(property: "date_installation", type: "string", format: "date"),
+                new OA\Property(property: "type_id", type: "integer"),
+                new OA\Property(property: "fournisseur_id", type: "integer"),
+            ]
+        )
+    ),
+    responses: [
+        new OA\Response(response: 201, description: "Équipement créé"),
+        new OA\Response(response: 400, description: "Données invalides")
+    ]
+)]
+#[Route(path: '', name: 'create', methods: ['POST'])]
+#[Route(path: '/', name: 'create_slash', methods: ['POST'])]
+
+public function create(Request $request): JsonResponse
     {
         $data = json_decode($request->getContent(), true);
 
-        $equipement = new Equipement();
-        $equipement->setNom($data['nom'] ?? '');
-        $equipement->setEtat((int) ($data['etat'] ?? 0));
-        $equipement->setDateinstallation(new \DateTime($data['date_installation'] ?? 'now'));
-
-        $type = $this->typeRepo->find($data['type_id'] ?? null);
-        if (!$type) {
-            return new JsonResponse(['message' => 'Type invalide'], 400);
+        if (!isset($data['nom'], $data['etat'], $data['date_installation'], $data['type_id'])) {
+            return $this->json(['message' => 'Données manquantes'], 400);
         }
+
+        $type = $this->typeRepo->find($data['type_id']);
+        if (!$type) {
+            return $this->json(['message' => 'Type invalide'], 400);
+        }
+
+        $equipement = new Equipement();
+        $equipement->setNom($data['nom']);
+        $equipement->setEtat((int) $data['etat']);
+        $equipement->setDateInstallation(new \DateTime($data['date_installation']));
         $equipement->setType($type);
 
-        if (isset($data['fournisseur_id'])) {
+        if (!empty($data['fournisseur_id'])) {
             $fournisseur = $this->fournisseurRepo->find($data['fournisseur_id']);
             if ($fournisseur) {
                 $equipement->setFournisseur($fournisseur);
@@ -175,45 +169,26 @@ class EquipementController extends AbstractController
         $this->em->persist($equipement);
         $this->em->flush();
 
-        return new JsonResponse(['message' => 'Équipement créé avec succès', 'id' => $equipement->getId()], 201);
-    }
-
-    #[Route('/{id}', name: 'update', methods: ['PUT'])]
-    #[OA\Put(
-        summary: "Mettre à jour un équipement",
-        parameters: [
-            new OA\Parameter(
-                name: "id",
-                in: "path",
-                required: true,
-                description: "ID de l'équipement à mettre à jour",
-                schema: new OA\Schema(type: "integer")
-            )
-        ],
-        requestBody: new OA\RequestBody(
-            required: true,
-            content: new OA\JsonContent(
-                type: "object",
-                properties: [
-                    new OA\Property(property: "nom", type: "string", example: "Serveur Dell"),
-                    new OA\Property(property: "etat", type: "integer", example: 0),
-                    new OA\Property(property: "date_installation", type: "string", format: "date", example: "2024-08-01"),
-                    new OA\Property(property: "type_id", type: "integer", example: 3),
-                    new OA\Property(property: "fournisseur_id", type: "integer", example: 2, nullable: true),
-                ]
-            )
-        ),
-        responses: [
-            new OA\Response(response: 200, description: "Équipement mis à jour"),
-            new OA\Response(response: 404, description: "Équipement non trouvé"),
-            new OA\Response(response: 400, description: "Données invalides")
+        return $this->json(['message' => 'Équipement créé avec succès', 'id' => $equipement->getId()], 201);
+    }#[Route('/{id}', name: 'update', methods: ['PUT'])]
+#[OA\RequestBody(
+    required: true,
+    content: new OA\JsonContent(
+        type: "object",
+        properties: [
+            new OA\Property(property: "nom", type: "string", example: "Switch Cisco 2960"),
+            new OA\Property(property: "etat", type: "integer", example: 1),
+            new OA\Property(property: "date_installation", type: "string", format: "date", example: "2025-08-05"),
+            new OA\Property(property: "type_nom", type: "string", example: "Switch"),
+            new OA\Property(property: "fournisseur_id", type: "integer", example: 4),
         ]
-    )]
+    )
+)]#[Route('/{id}', name: 'update', methods: ['PUT'])]
     public function update(int $id, Request $request): JsonResponse
     {
         $equipement = $this->equipementRepo->find($id);
         if (!$equipement) {
-            return new JsonResponse(['message' => 'Équipement non trouvé'], 404);
+            return $this->json(['message' => 'Équipement non trouvé'], 404);
         }
 
         $data = json_decode($request->getContent(), true);
@@ -222,13 +197,13 @@ class EquipementController extends AbstractController
             $equipement->setNom($data['nom']);
         }
         if (isset($data['etat'])) {
-            $equipement->setEtat((int)$data['etat']);
+            $equipement->setEtat((int) $data['etat']);
         }
         if (isset($data['date_installation'])) {
-            $equipement->setDateinstallation(new \DateTime($data['date_installation']));
+            $equipement->setDateInstallation(new \DateTime($data['date_installation']));
         }
-        if (isset($data['type_id'])) {
-            $type = $this->typeRepo->find($data['type_id']);
+        if (isset($data['type_nom'])) {
+            $type = $this->typeRepo->find($data['type_nom']);
             if ($type) {
                 $equipement->setType($type);
             }
@@ -242,59 +217,21 @@ class EquipementController extends AbstractController
 
         $this->em->flush();
 
-        return new JsonResponse(['message' => 'Équipement mis à jour']);
+        return $this->json(['message' => 'Équipement mis à jour']);
     }
+    
 
     #[Route('/{id}', name: 'delete', methods: ['DELETE'])]
-    #[OA\Delete(
-        summary: "Supprimer un équipement",
-        parameters: [
-            new OA\Parameter(
-                name: "id",
-                in: "path",
-                required: true,
-                description: "ID de l'équipement à supprimer",
-                schema: new OA\Schema(type: "integer")
-            )
-        ],
-        responses: [
-            new OA\Response(response: 200, description: "Équipement supprimé"),
-            new OA\Response(response: 404, description: "Équipement non trouvé")
-        ]
-    )]
     public function delete(int $id): JsonResponse
     {
         $equipement = $this->equipementRepo->find($id);
         if (!$equipement) {
-            return new JsonResponse(['message' => 'Équipement non trouvé'], 404);
+            return $this->json(['message' => 'Équipement non trouvé'], 404);
         }
 
         $this->em->remove($equipement);
         $this->em->flush();
 
-        return new JsonResponse(['message' => 'Équipement supprimé']);
+        return $this->json(['message' => 'Équipement supprimé']);
     }
-    #[Route('/{id}/evenements', name: 'equipement_evenements', methods: ['GET'])]
-public function getEvenementsHistorique(int $id): JsonResponse
-{
-    $equipement = $this->equipementRepo->find($id);
-    if (!$equipement) {
-        return new JsonResponse(['error' => 'Équipement non trouvé'], 404);
-    }
-
-    $evenements = [];
-    foreach ($equipement->getTicketIncidents() as $ticket) {
-        foreach ($ticket->getEvenementsHistoriques() as $evenement) {
-            $evenements[] = [
-                'id' => $evenement->getId(),
-                'date' => $evenement->getDate()->format('Y-m-d H:i'),
-                'description' => $evenement->getDescription(),
-                'type' => $evenement->getType()->getNom()
-            ];
-        }
-    }
-
-    return new JsonResponse($evenements);
-}
-
 }

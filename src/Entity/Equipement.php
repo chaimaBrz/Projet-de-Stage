@@ -1,30 +1,43 @@
 <?php
 
 namespace App\Entity;
-
+use Symfony\Component\Serializer\Annotation\Groups;
 use App\Repository\EquipementRepository;
 use Doctrine\ORM\Mapping as ORM;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
 use App\Entity\Alerte;
 use App\Entity\TicketIncident;
+use ApiPlatform\Metadata\ApiResource;
+use Symfony\Component\Serializer\Annotation\SerializedName;
+
 
 #[ORM\Entity(repositoryClass: EquipementRepository::class)]
+#[ApiResource(
+    normalizationContext: ['groups' => ['read']],
+    denormalizationContext: ['groups' => ['write']]
+)]
 class Equipement
 {
     #[ORM\Id]
     #[ORM\GeneratedValue]
-    #[ORM\Column]
+    #[ORM\Column(type: 'integer')]
+    #[Groups(['read'])]
     private ?int $id = null;
 
-    #[ORM\Column(length: 255)]
-    private ?string $nom = null;
 
+   #[Groups(['read'])]
+#[ORM\Column(type: 'string', length: 255)]
+private ?string $nom = null;
+
+    
     #[ORM\Column(type: 'integer')]
     private ?int $etat = null;
 
-    #[ORM\Column]
-    private ?\DateTime $Dateinstallation = null;
+   #[Groups(['read'])]
+#[SerializedName('date_installation')]
+#[ORM\Column(type: 'datetime')]
+private ?\DateTime $dateinstallation = null;
 
     #[ORM\ManyToOne(inversedBy: 'equipements')]
     #[ORM\JoinColumn(nullable: false)]
@@ -36,18 +49,13 @@ class Equipement
     #[ORM\OneToMany(mappedBy: 'equipement', targetEntity: Alerte::class, orphanRemoval: true)]
     private Collection $alertes;
 
-    // 👇 Nouvelle relation pour accéder aux tickets liés à cet équipement
-    #[ORM\OneToMany(mappedBy: 'equipement', targetEntity: TicketIncident::class)]
-    private Collection $ticketIncidents;
+#[ORM\OneToMany(mappedBy: 'equipement', targetEntity: TicketIncident::class)]
+private Collection $ticketIncidents;
 
-    #[ORM\OneToMany(mappedBy: 'equipement', targetEntity: EvenementHistorique::class)]
-    private Collection $evenementsHistoriques;
+    #[ORM\OneToMany(mappedBy: 'equipement', targetEntity: EvenementHistorique::class, fetch: 'EAGER')]
 
-    public function __construct()
-    {
-        $this->alertes = new ArrayCollection();
-        $this->ticketIncidents = new ArrayCollection();
-    }
+private Collection $evenements;
+
 
     public function getId(): ?int
     {
@@ -77,15 +85,16 @@ class Equipement
     }
 
     public function getDateinstallation(): ?\DateTime
-    {
-        return $this->Dateinstallation;
-    }
+{
+    return $this->dateinstallation;  // d minuscule
+}
 
-    public function setDateinstallation(\DateTime $Dateinstallation): static
-    {
-        $this->Dateinstallation = $Dateinstallation;
-        return $this;
-    }
+public function setDateinstallation(\DateTime $dateinstallation): static
+{
+    $this->dateinstallation = $dateinstallation;  // d minuscule
+    return $this;
+}
+
 
     public function getType(): ?Type
     {
@@ -135,12 +144,46 @@ class Equipement
         return $this;
     }
 
-    // ✅ Nouveaux getters/setters pour ticketIncidents
+   public function __construct()
+{
+    $this->alertes = new ArrayCollection();
+    $this->ticketIncidents = new ArrayCollection();
+    $this->evenements = new ArrayCollection();
+}
 
-    public function getTicketIncidents(): Collection
+ /**
+     * @return Collection|EvenementHistorique[]
+     */
+    public function getEvenements(): Collection
     {
-        return $this->ticketIncidents;
+        return $this->evenements;
     }
+
+    public function addEvenement(EvenementHistorique $evenement): static
+    {
+        if (!$this->evenements->contains($evenement)) {
+            $this->evenements[] = $evenement;
+            $evenement->setEquipement($this);
+        }
+
+        return $this;
+    }
+
+    public function removeEvenement(EvenementHistorique $evenement): static
+    {
+        if ($this->evenements->removeElement($evenement)) {
+            if ($evenement->getEquipement() === $this) {
+                $evenement->setEquipement(null);
+            }
+        }
+
+        return $this;
+    }
+public function getTicketIncidents(): Collection
+{
+    return $this->ticketIncidents;
+}
+
 
     public function addTicketIncident(TicketIncident $ticket): static
     {
@@ -162,4 +205,6 @@ class Equipement
 
         return $this;
     }
+
+
 }
